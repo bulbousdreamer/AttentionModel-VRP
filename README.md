@@ -53,3 +53,19 @@ AM is trained by policy gradient using <a href="https://link.springer.com/articl
  # Training procedure:
   1) Open  **train_with_checkpoint.ipynb** and choose training parameters.
   2) All outputs would be saved in current directory.
+
+# Details of Files
+
+## `attention_graph_encoder.py`
+
+The attention graph encoder utilizes an almost-intact encoder architecture from the transformer. There is no positional encoding and several linear projections (Dense layers with no activation) are used for conducting the embedding step.
+
+### `class MultiHeadAttentionLayer`
+
+This class defines a single encoding unit. It will not support embedding (done a-priori). All moving parts as defined in the paper are created in constructor and call function connects them together.
+
+### `class GraphAttentionEncoder`
+
+This class defines the full encoder defined in Kool et al. The constructor sets up the embedding layer. The embedding uses two Dense layers. One for passingl only the depot location and another for the rest of nodes. This is important to note since the depot and rest of nodes are not passed through the same embedding layer. Finally, the Multi Headed Attention Layers are stacked together in a list.
+
+The call function simply connects the moving pieces, abstracting away from the multiheaded attention units.

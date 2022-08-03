@@ -11,7 +11,9 @@ class MultiHeadAttentionLayer(tf.keras.layers.Layer):
             feed_forward_hidden: number of neuron units in each FF layer.
 
         Call arguments:
+            #TODO What does node_embedding_size represent? prior embedding before n_model?
             x: batch of shape (batch_size, n_nodes, node_embedding_size).
+            #TODO function or math?
             mask: mask for MHA layer
 
         Returns:
@@ -28,12 +30,16 @@ class MultiHeadAttentionLayer(tf.keras.layers.Layer):
         self.ff2 = tf.keras.layers.Dense(input_dim, name='ff2')
 
     def call(self, x, mask=None):
+        ''' Creates a single encoder MHA+FFNN unit with residual connections and batch normalization
+        x(Encoded) |> MHA |> Residual |> BN |> Dense (ReLu) |> Dense (None) |> Residual |> BN
+        '''
+        #TODO Checkout MHA
         mha_out = self.mha(x, x, x, mask)
         sc1_out = tf.keras.layers.Add()([x, mha_out])
         bn1_out = self.bn1(sc1_out, training=True)
 
         ff1_out = self.ff1(bn1_out)
-        relu1_out = tf.keras.activations.relu(ff1_out)
+        relu1_out = tf.keras.activations.relu(ff1_out) # ReLu passed through separately
         ff2_out = self.ff2(relu1_out)
         sc2_out = tf.keras.layers.Add()([bn1_out, ff2_out])
         bn2_out = self.bn2(sc2_out, training=True)
@@ -70,7 +76,9 @@ class GraphAttentionEncoder(tf.keras.layers.Layer):
         self.feed_forward_hidden = feed_forward_hidden
 
         # initial embeddings (batch_size, n_nodes-1, 2) --> (batch-size, input_dim), separate for depot and other nodes
+        # Linear Projection of Depot
         self.init_embed_depot = tf.keras.layers.Dense(self.input_dim, name='init_embed_depot')  # nn.Linear(2, embedding_dim)
+        # Linear Projection of rest of nodes
         self.init_embed = tf.keras.layers.Dense(self.input_dim, name='init_embed')
 
         self.mha_layers = [MultiHeadAttentionLayer(self.input_dim, self.num_heads, self.feed_forward_hidden)
@@ -80,6 +88,7 @@ class GraphAttentionEncoder(tf.keras.layers.Layer):
 
         assert mask is None, "TODO mask not yet supported!"
 
+        # Perform embedding and concatenate to pass thorugh architecture.
         x = tf.concat((self.init_embed_depot(x[0])[:, None, :],  # (batch_size, 2) --> (batch_size, 1, 2)
                        self.init_embed(tf.concat((x[1], x[2][:, :, None]), axis=-1))  # (batch_size, n_nodes-1, 2) + (batch_size, n_nodes-1)
                        ), axis=1)  # (batch_size, n_nodes, input_dim)
@@ -88,5 +97,5 @@ class GraphAttentionEncoder(tf.keras.layers.Layer):
         for i in range(self.num_layers):
             x = self.mha_layers[i](x)
 
-        output = (x, tf.reduce_mean(x, axis=1))
+        output = (x, tf.reduce_mean(x, axis=1)) # Nodes and Graph embeddings
         return output # (embeds of nodes, avg graph embed)=((batch_size, n_nodes, input), (batch_size, input_dim))
