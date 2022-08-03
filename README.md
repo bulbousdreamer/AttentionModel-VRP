@@ -54,6 +54,8 @@ AM is trained by policy gradient using <a href="https://link.springer.com/articl
   1) Open  **train_with_checkpoint.ipynb** and choose training parameters.
   2) All outputs would be saved in current directory.
 
+![Encoder/Decoder architecture from Kool et al.](./img/EncoderDecoderAM.png)
+
 # Details of Files
 
 ## `attention_graph_encoder.py`
