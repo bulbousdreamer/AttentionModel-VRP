@@ -25,7 +25,9 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
         self.tanh_clipping = tanh_clipping
         self.decode_type = decode_type
 
-        # we split projection matrix Wq into 2 matrices: Wq*[h_c, h_N, D] = Wq_context*h_c + Wq_step_context[h_N, D]
+        # TODO: Difference between context and step_context?
+        # we split projection matrix Wq into 2 matrices: 
+        # Wq*[h_c, h_N, D] = Wq_context*h_c + Wq_step_context[h_N, D]
         self.wq_context = tf.keras.layers.Dense(self.output_dim, use_bias=False, name='wq_context')  # (d_q_context, output_dim)
         self.wq_step_context = tf.keras.layers.Dense(self.output_dim, use_bias=False, name='wq_step_context')  # (d_q_step_context, output_dim)
 
@@ -42,6 +44,11 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
         self.problem = VRPproblem
 
     def set_decode_type(self, decode_type):
+        """Select decoding style
+        There are two styles:
+          - Greedy (argmax each node)
+          - Sampling (sample and choose best)
+        """
         self.decode_type = decode_type
 
     def split_heads(self, tensor, batch_size):
@@ -73,13 +80,15 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
         return tf.squeeze(selected, axis=-1) # (bach_size,)
 
     def get_step_context(self, state, embeddings):
-        """Takes a state and graph embeddings,
+        """Takes a state and graph embeddings (Node embeddings),
            Returns a part [h_N, D] of context vector [h_c, h_N, D],
            that is related to RL Agent last step.
+           Returns the embedding of last node and the remaining material.
         """
-        # index of previous node
+        # index of previous node (TODO: What kind of data structure is state?)
         prev_node = state.prev_a  # (batch_size, 1)
 
+        # We are selecting the prev_node's embedding.
         # from embeddings=(batch_size, n_nodes, input_dim) select embeddings of previous nodes
         cur_embedded_node = tf.gather(embeddings, tf.cast(prev_node, tf.int32), batch_dims=1)  # (batch_size, 1, input_dim)
 
@@ -103,7 +112,7 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
         """
 
         #batch_size = tf.shape(Q)[0]
-
+        # score of similarity: u_[c,j]^l
         compatibility = tf.matmul(Q, K, transpose_b=True)/tf.math.sqrt(self.dk_mha_decoder)  # (batch_size, num_heads, seq_len_q, seq_len_k)
 
         #dk = tf.cast(tf.shape(K)[-1], tf.float32)
@@ -117,14 +126,16 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
             # so that we will be able to do a broadcast:
             # (batch_size, num_heads, seq_len_q, seq_len_k) + (batch_size, 1, seq_len_q, seq_len_k)
             mask = mask[:, tf.newaxis, :, :]
+            # tf.newaxis similar to expand_dims (adds a new dimension)
 
-            # we use tf.where since 0*-np.inf returns nan, but not -np.inf
+            # we use tf.where since 0*-np.inf returns nan (seen as False), but not -np.inf
             compatibility = tf.where(mask,
                                      tf.ones_like(compatibility) * (-np.inf),
                                      compatibility
                                      )
-
+        # Obtains the attention scores: a_[i,j]
         compatibility = tf.nn.softmax(compatibility, axis=-1)  # (batch_size, num_heads, seq_len_q, seq_len_k)
+        # claculates final value of attention
         attention = tf.matmul(compatibility, V)  # (batch_size, num_heads, seq_len_q, head_depth)
 
         # transpose back to (batch_size, seq_len_q, num_heads, depth)
@@ -132,7 +143,8 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
 
         # concatenate heads (last 2 dimensions)
         attention = tf.reshape(attention, (self.batch_size, -1, self.output_dim))  # (batch_size, seq_len_q, output_dim)
-
+        # Same as linear projection. Rather than having a matrix for each head, 
+        # NN has all parameters. 
         output = self.w_out(attention)  # (batch_size, seq_len_q, output_dim), seq_len_q = 1 for context att in decoder
 
         return output
@@ -149,12 +161,13 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
                     has shape  (batch_size, seq_len_k, output_dim), seq_len_k = n_nodes for decoder
         """
 
+        # Calculate first part of compatibility scores
         compatibility = tf.matmul(Q, K, transpose_b=True) / tf.math.sqrt(self.dk_get_loc_p)
 
         #dk = tf.cast(tf.shape(K)[-1], tf.float32)
         #compatibility = compatibility / tf.math.sqrt(dk)
         #compatibility = compatibility / tf.math.sqrt(self.dk_get_loc_p)
-
+        # Conduct value clipping
         compatibility = tf.math.tanh(compatibility) * self.tanh_clipping
 
         if mask is not None:
@@ -167,7 +180,7 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
                                      tf.ones_like(compatibility) * (-np.inf),
                                      compatibility
                                      )
-
+        # rather than probabilities, we go one step and make them logits
         log_p = tf.nn.log_softmax(compatibility, axis=-1)  # (batch_size, seq_len_q, seq_len_k)
 
         return log_p
@@ -181,8 +194,11 @@ class GraphAttentionDecoder(tf.keras.layers.Layer):
         outputs = []
         sequences = []
 
+        # Convert inputs into problem. Helpful in observing valid steps to take.
         state = self.problem(inputs)
 
+        # Compute Q, K, and V. K_tanh is the key for  1-HA last layer
+        #TODO: Why two keys?
         # we compute some projections (common for each policy step) before decoding loop for efficiency
         K = self.wk(self.embeddings)  # (batch_size, n_nodes, output_dim)
         K_tanh = self.wk_tanh(self.embeddings)  # (batch_size, n_nodes, output_dim)
