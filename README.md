@@ -106,6 +106,7 @@ This function simply sets up the decoding style. If _greedy_ is chosen, then, th
 
 #### `split_heads`
 
+Reshapes an input tensor to be computable by multi-headed attention layer. In specifics, it from a tensor of shape `batch_size x ...` to a tensor of shapes `batch_size x num_heads x ... x head_depth`
 #### `_select_node`
 
 Enforces the output style for the decoder. see `set_decode_type`.
@@ -131,3 +132,44 @@ The function conducts the inference of the solution to a given input problem. Fi
 First, the function stores away the node embeddings received as well as the node embeddings calculated from the encoder. The function is set up to work with batches, thus, that information is extracted.
 
 Then, the Query, Key, and Values to be used are computed. Recall that these variables are linear projections with respect to the graph embedding and the input embedding.
+
+`attention_model.py`
+--------------------
+
+### `AttentionModel`
+
+#### `__init__`
+
+Stores the information used for the specific encoding/decoding matrices and problem types. Builds the encoder/decoder by simply using instances of `GraphAttentionEncoder` and `GraphAttentionDecoder`.
+
+#### `set_decode_type`
+
+Seems like mostly informative variable setter.
+
+
+#### `_calc_log_likelihood`
+
+Used on calculating the log likelihood of the entire trajectory created.
+
+#### `call`
+
+Passes the input through the encoder to produce both the node embeddings and the graph embedding (`embeddings` and `mean_graph_emb`). Then, the input graph, node embeddings, and graph embeddings are used for decoding and obtaininb both the logits and returned trajectory/node list (`_log_p` and `pi`). Finally, the cost of following the produced trajectory as well as the log likelihood for each the entire trajectory are calculated and returned. If the trajectory was selected to be returned, then, it is returned.
+
+
+`Environment.py`
+----------------
+
+`generate_data.py`
+------------------
+
+
+`layers.py`
+-----------
+
+
+`reinforce_baseline.py`
+-----------------------
+
+
+`train.py`
+----------
